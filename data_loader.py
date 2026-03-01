@@ -31,7 +31,6 @@ class DataRequest:
 
 def _empty_ohlcv_frame() -> pd.DataFrame:
     """Return an empty dataframe with expected OHLCV columns."""
-
     return pd.DataFrame(columns=REQUIRED_COLUMNS)
 
 
@@ -40,66 +39,61 @@ def _normalize_ohlcv_columns(raw: pd.DataFrame, ticker: str) -> pd.DataFrame:
 
     yfinance may return:
     - single-level columns (Open/High/Low/Close/Volume)
-    - two-level MultiIndex columns (Price, Ticker)
+    - two-level MultiIndex columns (Field, Ticker)
     - occasionally columns with lowercase names
     """
 
-    if raw.empty:
+    if raw is None or raw.empty:
         return _empty_ohlcv_frame()
 
     data = raw.copy()
 
-    # Handle multi-ticker/multi-index shaped output.
+    # Handle multi-index output.
     if isinstance(data.columns, pd.MultiIndex):
         level_values = pd.Index(data.columns.get_level_values(-1)).astype(str)
         target = ticker.upper()
         ticker_matches = level_values.str.upper() == target
 
-        # Try exact ticker (case-insensitive) in level 1 first.
         if ticker_matches.any():
             matched_ticker = level_values[ticker_matches][0]
             try:
                 data = data.xs(matched_ticker, axis=1, level=-1)
             except (KeyError, ValueError):
-                # Fall back to dropping ticker level if xs fails for any edge-case shape.
                 data = data.droplevel(-1, axis=1)
         else:
             # Common single-ticker shape is (field, ticker) across columns.
             data = data.droplevel(-1, axis=1)
 
-    # Make column matching resilient to casing and spacing.
+    # Normalize column names (case/whitespace)
     col_map = {str(c).strip().lower(): c for c in data.columns}
+
     selected = {}
-    for target in REQUIRED_COLUMNS:
-        source_col = col_map.get(target.lower())
+    for target_col in REQUIRED_COLUMNS:
+        source_col = col_map.get(target_col.lower())
         if source_col is not None:
-            selected[target] = data[source_col]
+            selected[target_col] = data[source_col]
 
     if len(selected) < len(REQUIRED_COLUMNS):
         return _empty_ohlcv_frame()
 
     normalized = pd.DataFrame(selected)
+
+    # Clean index + sort
     normalized.index = pd.to_datetime(normalized.index).tz_localize(None)
     normalized = normalized.sort_index()
+
+    # Ensure core OHLC is valid
     normalized = normalized.dropna(subset=["Open", "High", "Low", "Close"])
+
+    # Volume numeric
     normalized["Volume"] = pd.to_numeric(normalized["Volume"], errors="coerce").fillna(0)
+
     return normalized
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 30)
 def load_ohlcv_data(request: DataRequest) -> pd.DataFrame:
-    """Fetch OHLCV data from Yahoo Finance and normalize schema.
-
-    Parameters
-    ----------
-    request : DataRequest
-        User-selected request parameters.
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame indexed by date with Open/High/Low/Close/Volume columns.
-    """
+    """Fetch OHLCV data from Yahoo Finance and normalize schema."""
 
     interval = INTERVAL_MAP.get(request.interval, "1d")
     raw = yf.download(
