@@ -16,6 +16,7 @@ INTERVAL_MAP = {
     "Monthly": "1mo",
 }
 
+main
 
 @dataclass(frozen=True)
 class DataRequest:
@@ -27,6 +28,7 @@ class DataRequest:
     interval: str
 
 
+main
 @st.cache_data(show_spinner=False, ttl=60 * 30)
 def load_ohlcv_data(request: DataRequest) -> pd.DataFrame:
     """Fetch OHLCV data from Yahoo Finance and normalize schema.
@@ -53,12 +55,4 @@ def load_ohlcv_data(request: DataRequest) -> pd.DataFrame:
         threads=False,
     )
 
-    if raw.empty:
-        return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
-
-    data = raw[["Open", "High", "Low", "Close", "Volume"]].copy()
-    data.index = pd.to_datetime(data.index).tz_localize(None)
-    data = data.sort_index()
-    data = data.dropna(subset=["Open", "High", "Low", "Close"]) 
-    data["Volume"] = data["Volume"].fillna(0)
-    return data
+main
